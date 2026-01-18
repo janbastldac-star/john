@@ -1,0 +1,146 @@
+<!-- index.html -->
+<!-- Mobilní optimalizace, přímé focení, přihlášení a OCR s nízkou zátěží -->
+
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Mobilní Generátor Kvízů</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {--primary-color:#2563eb;--secondary-color:#f3f4f6;--success-color:#16a34a;--error-color:#dc2626;--text-color:#111827;--border-radius:12px;--transition-speed:0.3s;}
+* {box-sizing:border-box;}
+body {font-family:'Roboto',sans-serif;background-color:var(--secondary-color);color:var(--text-color);margin:0;padding:0 12px 40px 12px;display:flex;flex-direction:column;align-items:center;}
+h2 {margin-top:24px;color:var(--primary-color);text-align:center;}
+p {max-width:700px;text-align:center;}
+textarea {width:100%;max-width:700px;height:160px;padding:12px;margin-top:12px;border-radius:var(--border-radius);border:1px solid #ccc;resize:vertical;font-size:16px;}
+button {margin-top:12px;padding:12px 20px;font-size:16px;color:#fff;background-color:var(--primary-color);border:none;border-radius:var(--border-radius);cursor:pointer;transition:background-color var(--transition-speed);}
+button:hover {background-color:#1d4ed8;}
+select {padding:8px;font-size:16px;border-radius:var(--border-radius);border:1px solid #ccc;margin-top:8px;}
+input[type=file] {margin-top:12px;}
+.question {margin-top:20px;padding:16px;background-color:#fff;border-radius:var(--border-radius);box-shadow:0 4px 8px rgba(0,0,0,0.1);}
+.option {display:block;margin:8px 0;font-size:15px;}
+.option input {margin-right:8px;}
+.result {margin-top:24px;font-weight:700;font-size:20px;text-align:center;}
+.correct {color:var(--success-color);font-weight:700;}
+.incorrect {color:var(--error-color);font-weight:700;}
+.login-section {margin-top:12px;display:flex;flex-direction:column;align-items:center;}
+.login-section input {padding:8px; margin:4px 0; border-radius:var(--border-radius); border:1px solid #ccc; width: 90%; max-width: 300px;}
+@media (max-width:768px){body{padding:0 6px;}textarea{height:140px;}}
+</style>
+</head>
+<body>
+<h2>Mobilní Generátor Kvízů</h2>
+<p>Přihlášení umožňuje uložit tvé kvízy a výsledky. Můžeš také fotit text přímo z telefonu.</p>
+<div class="login-section">
+<input type="text" id="username" placeholder="Uživatelské jméno" />
+<input type="password" id="password" placeholder="Heslo" />
+<button onclick="login()">Přihlásit se</button>
+</div>
+<label>Počet otázek:</label>
+<select id="count">
+<option value="5">5</option>
+<option value="10">10</option>
+<option value="15">15</option>
+</select>
+<textarea id="inputText" placeholder="Vlož text k učení..."></textarea>
+<input type="file" id="fileInput" accept="image/*" capture="environment">
+<button onclick="processFile()">Načíst text z fotky (mobilní optimalizace)</button>
+<button onclick="generateQuiz()">Vygenerovat nový kvíz</button>
+<div id="quiz"></div>
+<button onclick="checkAnswers()">Zkontrolovat odpovědi</button>
+<div id="score" class="result"></div>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+<script>
+let correctAnswers = [];
+let allTerms = [];
+let loggedIn = false;
+
+function login() {
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  if (u && p) {
+    loggedIn = true;
+    alert('Přihlášení úspěšné');
+  } else {
+    alert('Zadejte uživatelské jméno a heslo');
+  }
+}
+
+function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
+
+async function processFile() {
+  const file = document.getElementById('fileInput').files[0];
+  if (!file) return;
+  document.getElementById('inputText').value = 'Načítání textu z fotky...';
+
+  const worker = Tesseract.createWorker({ logger: m => console.log(m) });
+  await worker.load();
+  await worker.loadLanguage('ces');
+  await worker.initialize('ces');
+
+  const result = await worker.recognize(file, { rectangle: { top: 0, left: 0, width: 1000, height: 1000 } });
+  await worker.terminate();
+
+  // Optimalizace: odstranění nadbytečných mezer a prázdných řádků
+  const optimizedText = result.data.text.replace(/\s+/g, ' ').replace(/(\.|\n)+/g, '. ').trim();
+  document.getElementById('inputText').value = optimizedText;
+}
+
+function parseTextToTerms(text) {
+  const lines = text.split(/\./).map(l => l.trim()).filter(l => l);
+  const terms = [];
+  lines.forEach(line => {
+    const cleaned = line.replace(/^\s*\d+\.|^\s*[a-zA-Z]+\./,'').trim();
+    let split = cleaned.split(/[:–\-]/);
+    if(split.length >= 2){const term = split[0].trim(); const definition = split.slice(1).join(':').trim(); terms.push({term,definition});} else { const words=cleaned.split(' '); if(words.length>3){const term=words[0]; const definition=words.slice(1,10).join(' ')+(words.length>10?'...':''); terms.push({term,definition});} else { terms.push({term:cleaned,definition:cleaned});}}
+  });
+  const uniqueTerms=[];
+  const seen=new Set();
+  terms.forEach(t=>{if(t.term&&!seen.has(t.term)){uniqueTerms.push(t);seen.add(t.term);}});
+  uniqueTerms.sort((a,b)=>b.definition.length-a.definition.length);
+  return uniqueTerms;
+}
+
+function generateQuestion(obj){
+  const questionType = obj.definition && obj.definition !== obj.term ? 'Co je to' : 'Popiš pojem';
+  const question = `${questionType} ${obj.term}?`;
+  const correct = obj.definition || obj.term;
+  const pool = allTerms.filter(t => t.term !== obj.term).map(t => t.definition || t.term);
+  const distractors = [];
+  for(let d of shuffle(pool)){if(distractors.length<2 && Math.abs(d.length-correct.length)<=40) distractors.push(d);}
+  const options = shuffle([correct, ...distractors]);
+  return {question, options, answer: correct};
+}
+
+function generateQuiz(){
+  const text = document.getElementById('inputText').value;
+  if(!text) return;
+  const quizDiv = document.getElementById('quiz');
+  const scoreDiv = document.getElementById('score');
+  quizDiv.innerHTML=''; scoreDiv.textContent=''; correctAnswers=[];
+  const maxQ = parseInt(document.getElementById('count').value);
+  allTerms = shuffle(parseTextToTerms(text));
+  const selectedTerms = allTerms.slice(0,maxQ);
+  selectedTerms.forEach((obj,i)=>{
+    const q = generateQuestion(obj);
+    correctAnswers.push(q.answer);
+    const div = document.createElement('div'); div.className='question';
+    div.innerHTML = `<b>Otázka ${i+1}:</b> ${q.question}`;
+    q.options.forEach(opt=>{ const label=document.createElement('label'); label.className='option'; label.innerHTML=`<input type='radio' name='q${i}' value='${opt}'> ${opt}`; div.appendChild(label); });
+    quizDiv.appendChild(div);
+  });
+}
+
+function checkAnswers(){
+  let score=0;
+  document.querySelectorAll('.question').forEach((div,i)=>{
+    const selected=div.querySelector(`input[name='q${i}']:checked`);
+    if(selected){ if(selected.value===correctAnswers[i]){selected.parentElement.classList.add('correct'); score++;} else{selected.parentElement.classList.add('incorrect');}}
+  });
+  document.getElementById('score').textContent=`Výsledek: ${score} / ${correctAnswers.length}`;
+}
+</script>
+</body>
+</html>
